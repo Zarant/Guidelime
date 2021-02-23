@@ -830,6 +830,13 @@ local function updateStepCompletion(i, completedIndexes)
 			end
 			if step.completed == nil or not element.completed then step.completed = element.completed end
 			autoCompleteStep = true
+		elseif element.t == "GOTO_ZONE" then
+			if HBD:GetPlayerZone() == element.mapID then
+				step.completed = true
+				break
+			else
+				element.completed = false
+			end
 		end
 	end
 	-- check goto last so that go to does not matter when all other objectives are completed

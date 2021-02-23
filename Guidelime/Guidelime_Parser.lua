@@ -54,6 +54,7 @@ addon.codes = {
 	PICKUP = "QP", -- same as QA
 	WORK = "QW", -- same as QC but optional
 	COLLECT_ITEM = "CI",
+	GOTO_ZONE = "GZ",
 }
 
 addon.COLOR_INACTIVE = "|cFF666666"
@@ -434,6 +435,15 @@ function addon.parseLine(step, guide, strict, nameOnly)
 					err = true
 				end
 			end, 1)
+		elseif element.t == "GOTO_ZONE" then
+			tag:gsub("%s*(.+)", function(zone)
+				if zone ~= "" then guide.currentZone = addon.mapIDs[addon.getZoneName(zone)] end
+				element.mapID = guide.currentZone
+				if element.mapID == nil then 
+					addon.createPopupFrame(string.format(L.ERROR_CODE_ZONE_NOT_FOUND, guide.title or "", code, (step.line or "") .. " " .. step.text)):Show()
+					err = true
+				end
+			end
 		else
 			element.text, element.textInactive = textFormatting(tag)
 		end
