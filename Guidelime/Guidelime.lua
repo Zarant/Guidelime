@@ -844,10 +844,18 @@ local function updateStepCompletion(i, completedIndexes)
 			elseif element.completed and not element.lastGoto and element.attached == nil then
 				-- do not reactivate unless it is the last goto of the step
 			elseif addon.x ~= nil and addon.y ~= nil and element.wx ~= nil and element.wy ~= nil and addon.instance == element.instance and addon.alive and step.active then
-				local radius = element.radius * element.radius
-				-- add some hysteresis
-				if element.completed then radius = radius * 1.6 end
-				element.completed = (addon.x - element.wx) * (addon.x - element.wx) + (addon.y - element.wy) * (addon.y - element.wy) <= radius
+				if element.radius < 0 then
+					if HBD:GetPlayerZone() == element.mapID then
+						element.completed = true
+					else
+						element.completed = false
+					end
+				else
+					local radius = element.radius * element.radius
+					-- add some hysteresis
+					if element.completed then radius = radius * 1.6 end
+					element.completed = (addon.x - element.wx) * (addon.x - element.wx) + (addon.y - element.wy) * (addon.y - element.wy) <= radius
+				end
 			else
 				element.completed = false
 			end
@@ -1236,7 +1244,8 @@ function addon.completeSemiAutomatic(element)
 				if element.t == "ACCEPT" or
 					element.t == "COMPLETE" or
 					element.t == "TURNIN" or
-					element.t == "XP" then
+					element.t == "XP" or
+					element.t == "COLLECT_ITEM"	then
 					if not element.completed then 
 						addon.updateSteps()
 						return
