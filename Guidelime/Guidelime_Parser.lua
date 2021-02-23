@@ -325,7 +325,7 @@ function addon.parseLine(step, guide, strict, nameOnly)
 				end
 			end)
 		elseif element.t == "GOTO" then
-			local _, c = tag:gsub("%s*(%d+%.?%d*)%s?,%s?(%d+%.?%d*)%s?,?%s?(%d*%.?%d*)%s?(.*)", function(x, y, radius, zone)
+			local _, c = tag:gsub("%s*(%d+%.?%d*)%s?,%s?(%d+%.?%d*)%s?,?%s?(%-?%d*%.?%d*)%s?(.*)", function(x, y, radius, zone)
 				element.x = tonumber(x)
 				element.y = tonumber(y)
 				if radius ~= "" then element.radius = tonumber(radius) end
