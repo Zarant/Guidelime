@@ -53,6 +53,8 @@ addon.codes = {
 	COMPLETE_WITH_NEXT = "C", -- same as OC
 	PICKUP = "QP", -- same as QA
 	WORK = "QW", -- same as QC but optional
+	COLLECT_ITEM = "CI",
+	GOTO_ZONE = "GZ",
 }
 
 addon.COLOR_INACTIVE = "|cFF666666"
@@ -82,6 +84,7 @@ function addon.parseGuide(guide, group, strict, nameOnly)
 		guide.lines = 1
 		guide.steps = {}
 		guide.next = {}
+		guide.itemUpdateIndices = {}
 		guide.autoAddCoordinatesGOTO = true
 		guide.autoAddCoordinatesLOC = true
 		local t = guide.text:gsub("\\\\[\n\r]", "\\\\"):gsub("([^\n\r]-)[\n\r]", function(c)
@@ -328,7 +331,7 @@ function addon.parseLine(step, guide, strict, nameOnly)
 				end
 			end)
 		elseif element.t == "GOTO" then
-			local _, c = tag:gsub("%s*(%d+%.?%d*)%s?,%s?(%d+%.?%d*)%s?,?%s?(%d*%.?%d*)%s?(.*)", function(x, y, radius, zone)
+			local _, c = tag:gsub("%s*(%d+%.?%d*)%s?,%s?(%d+%.?%d*)%s?,?%s?(%-?%d*%.?%d*)%s?(.*)", function(x, y, radius, zone)
 				element.x = tonumber(x)
 				element.y = tonumber(y)
 				if radius ~= "" then element.radius = tonumber(radius) end
@@ -418,6 +421,31 @@ function addon.parseLine(step, guide, strict, nameOnly)
 --					addon.createPopupFrame(string.format(L.ERROR_CODE_NOT_RECOGNIZED, guide.title or "", code, (step.line or "") .. " " .. step.text)):Show()
 --					err = true
 --				end
+			end
+		elseif element.t == "COLLECT_ITEM" then
+			local _, c = tag:gsub("%s*(%d+),?(%d*)%s*(.-)%s*$", function(id, qty, title)	
+				if id ~= "" then
+					element.itemRequests = 0
+					element.itemId = tonumber(id)
+					element.qty = tonumber(qty) or 1
+					if title == "-" then
+						element.title = ""
+					elseif title ~= "" then
+						element.title = title
+					end
+				else
+					addon.createPopupFrame(string.format(L.ERROR_CODE_NOT_RECOGNIZED, guide.title or "", code, (step.line or "") .. " " .. step.text)):Show()
+					err = true
+				end
+			end, 1)
+		elseif element.t == "GOTO_ZONE" then
+			tag:gsub("%s*(.+)", function(zone)
+				if zone ~= "" then guide.currentZone = addon.mapIDs[addon.getZoneName(zone)] end
+				element.mapID = guide.currentZone
+				if element.mapID == nil then 
+					addon.createPopupFrame(string.format(L.ERROR_CODE_ZONE_NOT_FOUND, guide.title or "", code, (step.line or "") .. " " .. step.text)):Show()
+					err = true
+				end
 			end
 		else
 			element.text, element.textInactive = textFormatting(tag)

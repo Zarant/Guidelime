@@ -167,7 +167,8 @@ function addon.loadData()
 		editorFrameRelative = "CENTER",
 		guideSkip = {},
 		guideSize = {},
-		version = GetAddOnMetadata(addonName, "version")
+		version = GetAddOnMetadata(addonName, "version"),
+		completedSteps = {}
 	}
 	if GuidelimeData == nil then GuidelimeData = {} end
 	if GuidelimeDataChar == nil then GuidelimeDataChar = {} end
@@ -340,6 +341,8 @@ function addon.wipeFrameData()
 	end
 end
 
+local firstTimeLoading = true
+
 function addon.loadCurrentGuide()
 
 	addon.currentGuide = {}
@@ -359,15 +362,24 @@ function addon.loadCurrentGuide()
 		end
 		GuidelimeDataChar.currentGuide = nil
 		addon.currentGuide.name = nil
+		GuidelimeDataChar.completedSteps = {}
 		return
 	end
 	addon.currentGuide.next = guide.next
 	addon.currentGuide.group = guide.group
-	if GuidelimeDataChar.guideSkip[GuidelimeDataChar.currentGuide] == nil or GuidelimeDataChar.guideSize[GuidelimeDataChar.currentGuide] ~= #guide.steps then
+	
+	if GuidelimeDataChar.guideSize[GuidelimeDataChar.currentGuide] ~= #guide.steps then
+		GuidelimeDataChar.completedSteps = {}
 		GuidelimeDataChar.guideSkip[GuidelimeDataChar.currentGuide] = {}
 		GuidelimeDataChar.guideSize[GuidelimeDataChar.currentGuide] = #guide.steps
 	end
-
+	if GuidelimeDataChar.guideSkip[GuidelimeDataChar.currentGuide] == nil then
+		GuidelimeDataChar.guideSkip[GuidelimeDataChar.currentGuide] = {}
+	end
+	if not firstTimeLoading or GuidelimeDataChar.completedSteps == nil then
+		GuidelimeDataChar.completedSteps = {}
+	end
+	firstTimeLoading = false
 	--print(format(L.LOAD_MESSAGE, addon.currentGuide.name))
 	local time
 	if addon.debugging then time = debugprofilestop() end
@@ -495,6 +507,11 @@ function addon.loadCurrentGuide()
 							lastGoto = gotoElement
 						end
 					end						
+				elseif element.t == "COLLECT_ITEM" then
+					if #guide.itemUpdateIndices == 0 or guide.itemUpdateIndices[#guide.itemUpdateIndices] ~= step.index then
+						table.insert(guide.itemUpdateIndices,step.index)
+					end
+					step.manual = false
 				end
 				i = i + 1
 			end
@@ -502,7 +519,7 @@ function addon.loadCurrentGuide()
 			if step.completeWithNext == nil then step.compleWithNext = false end
 			if step.completeWithNext then step.optional = true end
 			if step.optional == nil then step.optional = false end
-			step.skip = GuidelimeDataChar.guideSkip[addon.currentGuide.name][#addon.currentGuide.steps] or false
+			step.skip = GuidelimeDataChar.guideSkip[addon.currentGuide.name][#addon.currentGuide.steps] or GuidelimeDataChar.completedSteps[#addon.currentGuide.steps] or false
 			step.active = false
 			step.wasActive = false
 			step.completed = false
@@ -706,6 +723,8 @@ function addon.getStepText(step)
 	local skipQuests = {}
 	local trackQuest = {}
 	local url
+	local itemText = ""
+
 	if GuidelimeData.showLineNumbers then text = text .. step.line .. " " end
 	if not step.active then
 		text = text .. addon.COLOR_INACTIVE
@@ -761,6 +780,41 @@ function addon.getStepText(step)
 					end
 				end
 			end
+		elseif element.t == "COLLECT_ITEM" then
+			local name,_,rarity = GetItemInfo(element.itemId)
+			local count,icon
+			local textIcon = "|T" .. addon.icons.item .. ":12|t"
+			local colour = ITEM_QUALITY_COLORS[1].hex
+			if name then
+				if step.active then
+					count = GetItemCount(element.itemId)
+					colour = ITEM_QUALITY_COLORS[rarity].hex
+					if count < element.qty then
+						icon = textIcon
+					else
+						count = element.qty
+						icon = "|T" .. addon.icons.COMPLETED .. ":12|t"
+						textIcon = ""
+					end
+					itemText = string.format("%s\n    - %s%s: %d/%d",itemText,icon,name,count,element.qty)
+				end
+			else
+				element.itemRequests = element.itemRequests +1
+				if element.itemRequests < 50 then
+					addon.requestItemInfo[element.itemId] = true
+				end
+			end
+
+			name = element.title or name
+			text = text .. textIcon
+
+			if name and name ~= "" then
+				if step.active then
+					text = text .. colour .. "[" .. name .. "]|r"
+				else
+					text = text .. "[" .. name .. "]"
+				end
+			end
 		end
 		if element.empty == nil or not element.empty then prevElement = element end
 	end
@@ -788,6 +842,7 @@ function addon.getStepText(step)
 			tooltip = tooltip .. addon.getQuestObjectiveText(id, objectives)
 		end
 	end
+	text = text .. itemText
 	return text, tooltip, skipText, skipTooltip, url
 end
 
@@ -812,12 +867,15 @@ end
 local function updateStepCompletion(i, completedIndexes)
 	local step = addon.currentGuide.steps[i]
 
+	local autoCompleteStep
 	local wasCompleted = step.completed
 	if not step.manual then	step.completed = nil end
+	step.itemsCollected = nil
 	for _, element in ipairs(step.elements) do
 		if element.t == "ACCEPT" then
 			element.completed = addon.quests[element.questId].completed or addon.quests[element.questId].logIndex ~= nil
 			if step.completed == nil or not element.completed then step.completed = element.completed end
+			autoCompleteStep = true
 		elseif element.t == "COMPLETE" then
 			element.completed =
 				addon.quests[element.questId].completed or
@@ -827,10 +885,12 @@ local function updateStepCompletion(i, completedIndexes)
 					addon.quests[element.questId].objectives[element.objective] ~= nil and
 					addon.quests[element.questId].objectives[element.objective].done)
 			if step.completed == nil or not element.completed then step.completed = element.completed end
+			autoCompleteStep = true
 		elseif element.t == "TURNIN" then
 			element.finished = addon.quests[element.questId].finished
 			element.completed = addon.quests[element.questId].completed
 			if step.completed == nil or not element.completed then step.completed = element.completed end
+			autoCompleteStep = true
 		elseif element.t == "XP" then
 			element.completed = element.level <= addon.level
 			if element.xp ~= nil and element.level == addon.level then
@@ -843,6 +903,24 @@ local function updateStepCompletion(i, completedIndexes)
 				end
 			end
 			if step.completed == nil or not element.completed then step.completed = element.completed end
+			autoCompleteStep = true
+		elseif element.t == "COLLECT_ITEM" and step.active then
+			if GetItemCount(element.itemId) >= element.qty then
+				element.completed = true
+				if step.itemsCollected == nil then step.itemsCollected = true end
+			else
+				element.completed = false
+				step.itemsCollected = false
+			end
+			if step.completed == nil or not element.completed then step.completed = element.completed end
+			autoCompleteStep = true
+		elseif element.t == "GOTO_ZONE" then
+			if HBD:GetPlayerZone() == element.mapID then
+				step.completed = true
+				break
+			else
+				element.completed = false
+			end
 		end
 	end
 	-- check goto last so that go to does not matter when all other objectives are completed
@@ -850,17 +928,25 @@ local function updateStepCompletion(i, completedIndexes)
 	for _, element in ipairs(step.elements) do
 		if element.t == "GOTO"  then
 			--if addon.debugging then print("LIME : zone coordinates", x, y, element.mapID) end
-			if nonGotoCompleted or step.skip then
+			if nonGotoCompleted then--step.skip check was redundant, this fixes a bug where you were unable to manually reactivate skipped goto steps
 				element.completed = true
 			elseif element.attached ~= nil and element.attached.completed then
 				element.completed = true
 			elseif element.completed and not element.lastGoto and element.attached == nil then
 				-- do not reactivate unless it is the last goto of the step
 			elseif addon.x ~= nil and addon.y ~= nil and element.wx ~= nil and element.wy ~= nil and addon.instance == element.instance and addon.alive and step.active then
-				local radius = element.radius * element.radius
-				-- add some hysteresis
-				if element.completed then radius = radius * 1.6 end
-				element.completed = (addon.x - element.wx) * (addon.x - element.wx) + (addon.y - element.wy) * (addon.y - element.wy) <= radius
+				if element.radius < 0 then
+					if HBD:GetPlayerZone() == element.mapID then
+						element.completed = true
+					else
+						element.completed = false
+					end
+				else
+					local radius = element.radius * element.radius
+					-- add some hysteresis
+					if element.completed then radius = radius * 1.6 end
+					element.completed = (addon.x - element.wx) * (addon.x - element.wx) + (addon.y - element.wy) * (addon.y - element.wy) <= radius
+				end
 			else
 				element.completed = false
 			end
@@ -868,8 +954,9 @@ local function updateStepCompletion(i, completedIndexes)
 		end
 	end
 	if step.completed == nil then step.completed = step.completeWithNext and wasCompleted end
-
-	if i < #addon.currentGuide.steps and step.completeWithNext ~= nil and step.completeWithNext then
+	
+	--skips the completeWithNext check if the step is already complete, fixing a bug where the step persisted even when all elements were complete
+	if not step.completed and i < #addon.currentGuide.steps and step.completeWithNext ~= nil and step.completeWithNext then
 		local nstep = addon.currentGuide.steps[i + 1]
 		local c = nstep.completed or nstep.skip
 		if step.completed ~= c then
@@ -879,6 +966,9 @@ local function updateStepCompletion(i, completedIndexes)
 	end
 
 	if step.completed ~= wasCompleted and not addon.contains(completedIndexes, i) then
+		if not autoCompleteStep then
+			GuidelimeDataChar.completedSteps[step.index] = step.completed
+		end
 		table.insert(completedIndexes, i)
 	end
 end
@@ -947,6 +1037,9 @@ local function updateStepsCompletion(changedIndexes)
 		local scheduled = {ACCEPT = {}, COMPLETE = {}, TURNIN = {}, SKIP = {}}
 		for i, step in ipairs(addon.currentGuide.steps) do
 			updateStepCompletion(i, changedIndexes)
+			if step.itemsCollected and step.completed then
+				step.skip = true --once all items are collected, don't re-enable the step again if you lose the item later
+			end
 			updateStepAvailability(i, changedIndexes, scheduled)
 			if addon.mainFrame.steps ~= nil and addon.mainFrame.steps[i] ~= nil and addon.mainFrame.steps[i].visible then
 				addon.mainFrame.steps[i]:SetChecked(step.completed or step.skip)
@@ -1229,6 +1322,7 @@ local function setStepSkip(value, a, b)
 		step.skip = value
 		GuidelimeDataChar.guideSkip[addon.currentGuide.name][i] = step.skip
 		table.insert(indexes, i)
+		GuidelimeDataChar.completedSteps[i] = GuidelimeDataChar.completedSteps[i] and value
 	end
 	if not value and not GuidelimeDataChar.showUnavailableSteps then
 		addon.updateMainFrame()
@@ -1270,7 +1364,8 @@ function addon.completeSemiAutomatic(element)
 				if element.t == "ACCEPT" or
 					element.t == "COMPLETE" or
 					element.t == "TURNIN" or
-					element.t == "XP" then
+					element.t == "XP" or
+					element.t == "COLLECT_ITEM"	then
 					if not element.completed then 
 						addon.updateSteps()
 						return
@@ -1279,7 +1374,9 @@ function addon.completeSemiAutomatic(element)
 			end
 		end
 	end
-	setStepSkip(true, step.index) 
+	GuidelimeDataChar.completedSteps[step.index] = true
+	step.skip = true
+	addon.updateSteps({step.index})
 end
 
 function addon.updateMainFrame(reset)
