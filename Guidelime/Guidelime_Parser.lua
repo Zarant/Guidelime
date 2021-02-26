@@ -446,7 +446,7 @@ function addon.parseLine(step, guide, strict, nameOnly)
 					addon.createPopupFrame(string.format(L.ERROR_CODE_ZONE_NOT_FOUND, guide.title or "", code, (step.line or "") .. " " .. step.text)):Show()
 					err = true
 				end
-			end
+			end)
 		else
 			element.text, element.textInactive = textFormatting(tag)
 		end
